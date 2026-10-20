@@ -106,6 +106,43 @@ To ensure strict real-world generalization and prevent temporal data leakage:
 
 ## 5. How to Run the Project
 
+### 1. Clone the repository
+
+```bash
+git clone https://github.com/ShreeBairagi/IPL.git
+cd IPL
+```
+
+### 2. Create a virtual environment
+
+**Windows (PowerShell):**
+
+```powershell
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+```
+
+### 3. Install dependencies
+
+```bash
+python -m pip install --upgrade pip
+python -m pip install -r requirements.txt
+```
+
+### 4. Run the dashboard
+
+```bash
+python -m streamlit run app.py
+```
+
+The dashboard may take a little time to initialize on its first launch.
+
+### Requirements
+
+- Python 3.11
+- The datasets included in the repository
+- Dependencies listed in `requirements.txt`
+
 ### Environment Setup
 Ensure the local Python environment (`.venv`) is activated.
 
