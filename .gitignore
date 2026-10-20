@@ -1,0 +1,16 @@
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.env
+.env.*
+!.env.example
+.streamlit/secrets.toml
+.vscode/
+.DS_Store
+Thumbs.db
+Datasets/scorePrediction.csv
+Datasets/scorePrediction.csv
+data/scorePrediction.csv
+/data/
