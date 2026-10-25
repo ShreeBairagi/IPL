@@ -4,7 +4,7 @@ Dashboard utilities and validation helpers for the IPL Match Intelligence Lab.
 Provides reusable inference helpers, input validation, and metric retrieval
 for the Streamlit dashboard without duplicating ML or preprocessing logic.
 """
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple, Union
 import pandas as pd
 
 from src.chase import (
@@ -17,6 +17,11 @@ from src.classification import (
     run_first_innings_classification,
 )
 from src.preprocessing import load_and_preprocess_data, normalize_venue
+from src.par_score import (
+    classify_stadium_score,
+    load_stadium_par_scores,
+    predict_score_with_stadium_par,
+)
 from src.regression import (
     CATEGORICAL_FEATURES,
     NUMERIC_FEATURES,
@@ -215,3 +220,15 @@ def load_all_models_and_metrics() -> Dict[str, Any]:
         "classification": clf_summary,
         "chase": chase_summary,
     }
+
+
+def get_stadium_par_evaluation(
+    predicted_score: Union[int, float],
+    venue: Optional[str] = None,
+    stats_df: Optional[pd.DataFrame] = None,
+) -> Dict[str, Any]:
+    """
+    Retrieve stadium par score and classify predicted score relative to venue conditions.
+    """
+    return classify_stadium_score(predicted_score, venue=venue, stats_df=stats_df)
+

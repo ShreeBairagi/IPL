@@ -21,6 +21,7 @@ from src.dashboard_utils import (
     build_chase_input_df,
     build_first_innings_input_df,
     get_project_overview_data,
+    get_stadium_par_evaluation,
     get_teams_and_venues,
     load_all_models_and_metrics,
     validate_chase_inputs,
@@ -175,6 +176,7 @@ def main():
 
                     predicted_score = float(reg_pipeline.predict(input_df)[0])
                     predicted_class = "Low" if predicted_score <= t_low else ("Medium" if predicted_score <= t_high else "High")
+                    stadium_eval = get_stadium_par_evaluation(predicted_score, venue)
 
                     st.success("### Prediction Generated")
                     res_col1, res_col2 = st.columns(2)
@@ -191,9 +193,39 @@ def main():
                             value=f"{predicted_class}",
                         )
                         st.caption(
-                            f"Thresholds derived from training data: Low (≤{t_low:.0f}), "
+                            f"Universal thresholds derived from training data: Low (≤{t_low:.0f}), "
                             f"Medium ({t_low:.0f}–{t_high:.0f}), High (>{t_high:.0f})."
                         )
+
+                    st.markdown("#### 🏟️ Stadium-Specific Par Evaluation")
+                    par_col1, par_col2 = st.columns(2)
+                    with par_col1:
+                        diff_val = stadium_eval["difference_from_par"]
+                        diff_str = f"{'+' if diff_val >= 0 else ''}{diff_val:.1f} vs Par"
+                        st.metric(
+                            label="Stadium Par Score",
+                            value=f"{stadium_eval['stadium_par_score']:.1f} runs",
+                            delta=diff_str,
+                        )
+                        fallback_note = " *(using competition average fallback)*" if stadium_eval["is_fallback"] else ""
+                        st.caption(f"Historical sample: **{stadium_eval['sample_size']}** matches at {stadium_eval['venue']}{fallback_note}.")
+
+                    with par_col2:
+                        st.metric(
+                            label="Stadium-Relative Tier",
+                            value=stadium_eval["classification"],
+                        )
+                        st.caption(
+                            f"Venue Tertiles: Low (<{stadium_eval['threshold_low']:.1f}), "
+                            f"Par ({stadium_eval['threshold_low']:.1f}–{stadium_eval['threshold_high']:.1f}), "
+                            f"High (>{stadium_eval['threshold_high']:.1f})."
+                        )
+
+                    st.info(
+                        "ℹ️ **Cricket Context:** Stadium par reflects historical scoring conditions for this venue. "
+                        "A 'High' classification indicates an above-average score for this ground, but is not guaranteed "
+                        "to be defended; similarly, a 'Low' score does not imply it cannot be defended."
+                    )
                 except Exception as e:
                     st.error(f"Error generating score prediction: {e}")
 

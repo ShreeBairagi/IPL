@@ -2,7 +2,7 @@
 
 An end-to-end, leak-free machine learning and predictive analytics system for the Indian Premier League (IPL), built on ball-by-ball delivery data from the 2008 through 2024 seasons.
 
-The system evaluates mid-innings match states at exactly 10 completed overs (overs 0–9) to forecast first-innings final scores, classify score tiers, estimate second-innings chase-win probabilities, and cluster historical batter profiles using unsupervised learning.
+The system evaluates mid-innings match states at exactly 10 completed overs (overs 0–9) to forecast first-innings final scores, classify score tiers, estimate second-innings chase-win probabilities, compute dynamic stadium-specific par scores, and cluster historical batter profiles using unsupervised learning.
 
 ---
 
@@ -19,13 +19,15 @@ IPL Match Intelligence Lab
 │     ├── Final Score Regression (src/regression.py): Predicts continuous 20-over first-innings final score.
 │     ├── Score Discretization & Classification (src/classification.py): Categorizes final scores into Low, Medium, High.
 │     └── Chase-Win Probability Estimation (src/chase.py): Predicts probability that chasing team wins.
-├── 4. Unsupervised Batter Clustering (src/batter_clustering.py)
-│     └── K-Means clustering (k=4) on historical players (seasons <= 2021) based on scoring efficiency.
-├── 5. Feature & Model Ablation Audits
+├── 4. Dynamic Stadium-Specific Par-Score Estimation (src/par_score.py & data/stadium_par_scores.csv)
+│     └── Evaluates continuous regression predictions against empirical ground tertiles with Bayesian shrinkage.
+├── 5. Unsupervised Batter Clustering (src/batter_clustering.py)
+│     └── K-Means clustering (k=2 to 5, optimal k=2) on historical players (seasons <= 2021) based on scoring efficiency.
+├── 6. Feature & Model Ablation Audits
 │     ├── Toss Feature Impact Evaluation: Baseline vs. toss-enhanced comparison across all tasks.
 │     └── XGBoost Integration (XGBRegressor & MulticlassXGBClassifier): Standardized benchmark against existing models.
-└── 6. Interactive Streamlit Dashboard (app.py & src/dashboard_utils.py)
-      └── 4-section interactive analytics interface with input validation and live model inference.
+└── 7. Interactive Streamlit Dashboard (app.py & src/dashboard_utils.py)
+      └── 5-section interactive analytics interface with input validation, live inference, and clustering visuals.
 ```
 
 ---
@@ -33,14 +35,16 @@ IPL Match Intelligence Lab
 ## 2. Chronological Partitioning & Leakage Prevention
 
 To ensure strict real-world generalization and prevent temporal data leakage:
-- **Training Set**: Matches from IPL seasons **2008 through 2021** (seasons $\le 2021$).
-- **Held-Out Test Set**: Matches from IPL seasons **2022 through 2024** (seasons $\ge 2022$).
-- **Partition Integrity**:
+- **Training Partition**: Matches from IPL seasons **2008 through 2021** (seasons $\le 2021$).
+- **Held-Out Test Partition**: Matches from IPL seasons **2022 through 2024** (seasons $\ge 2022$).
+- **Partition Integrity Safeguards**:
   - **Zero match overlap** between training and test sets.
-  - All preprocessing transformers (`StandardScaler`, `OneHotEncoder`) are fitted strictly on training data inside scikit-learn `Pipeline` objects.
+  - Preprocessing transformers (`StandardScaler`, `OneHotEncoder`) are fitted strictly on training data inside scikit-learn `Pipeline` objects.
   - Unseen franchise teams (e.g., Gujarat Titans, Lucknow Super Giants) and venues in 2022+ are handled safely via `handle_unknown="ignore"`.
   - Target variables (`final_score`, `target_achieved`), post-match metadata (`winner`, `result`), and tracking IDs (`match_id`, `season`) are strictly excluded from feature matrices $X$.
-  - Score classification thresholds ($152.0$ and $175.0$ runs) are calculated exclusively from training set tertiles ($33.33\%$ and $66.67\%$).
+  - Global score classification thresholds ($152.0$ and $175.0$ runs) are calculated exclusively from training set tertiles ($33.33\%$ and $66.67\%$).
+  - Stadium par scores and historical distributions are derived strictly from matches with `season <= 2021`; unseen grounds in test seasons fall back to competition training baselines without inspecting future matches.
+  - Batter clustering eligibility and rate statistics are computed strictly on deliveries through the 2021 season.
 
 ---
 
@@ -64,7 +68,8 @@ To ensure strict real-world generalization and prevent temporal data leakage:
 | **First-Innings Regression** | Mean Baseline, Linear Regression, Ridge Regression, Random Forest, Gradient Boosting, XGBoost (`XGBRegressor`) | MAE, RMSE, $R^2$ |
 | **First-Innings Classification** | Majority Baseline, K-Nearest Neighbors, Decision Tree, Support Vector Machine, Random Forest, XGBoost (`MulticlassXGBClassifier`), Regression-then-cut (Ridge, RF) | Accuracy, Macro F1, Confusion Matrix |
 | **Chase-Win Probability** | Majority Baseline, Logistic Regression, K-Nearest Neighbors, Random Forest, Gradient Boosting, XGBoost (`XGBClassifier`) | Accuracy, ROC-AUC, F1-Score, Brier Score |
-| **Batter Clustering** | K-Means ($k=2$ to $5$, optimal $k=4$, `n_init=10`, `random_state=42`) | Silhouette Score, Calinski-Harabasz, Davies-Bouldin |
+| **Stadium Par Classification** | Transparent Statistical Discretization (Empirical Bayes Shrinkage Tertiles) | Par Difference ($\Delta$), Ground Relative Class |
+| **Batter Clustering** | K-Means ($k=2$ to $5$, evaluated with `n_init=10`, `random_state=42`) | Silhouette Score, Cluster Centroids |
 
 ---
 
@@ -104,7 +109,100 @@ To ensure strict real-world generalization and prevent temporal data leakage:
 
 ---
 
-## 5. How to Run the Project
+## 5. Dynamic Stadium-Specific Par-Score Estimation
+
+In cricket analytics, universal score thresholds fail to reflect ground characteristics: a total of $175$ at the high-scoring **M Chinnaswamy Stadium (Bengaluru)** is merely par, whereas $175$ at **MA Chidambaram Stadium (Chepauk, Chennai)** is a match-winning high score.
+
+The system features dynamic stadium-specific par evaluation (`src/par_score.py`) without introducing an extra ML classification model.
+
+### Methodology & Workflow
+
+1. **Continuous Score Prediction**: The user's input state is evaluated by the existing 10-over Regression pipeline (e.g., Ridge or Random Forest) to produce a projected first-innings score $\hat{y}$.
+2. **Empirical Distribution Aggregation**: Eligible 20-over first innings from historical matches (`season <= 2021`) are aggregated per venue to compute sample size ($N$), median score ($\tilde{x}_{\text{venue}}$), mean score ($\bar{x}_{\text{venue}}$), standard deviation, recent 4-season scoring trend ($\bar{x}_{\text{recent}}$), and tertile percentiles ($P_{33}, P_{66}$).
+3. **Empirical Bayes Shrinkage for Small-Sample Grounds**:
+   To prevent volatility for grounds with few matches (e.g., *OUTsurance Oval* with $N=2$), statistics are shrunk toward the competition training baseline ($\tilde{x}_{\text{competition}} = 163.5$, $P_{33} = 152.0$, $P_{66} = 175.0$) using credibility weight $w = \frac{N}{N + m}$ (with pseudo-count $m = 5.0$):
+   $$\text{par\_score} = w \cdot \tilde{x}_{\text{venue}} + (1 - w) \cdot \tilde{x}_{\text{competition}}$$
+   $$\text{threshold\_low} = w \cdot P_{33, \text{venue}} + (1 - w) \cdot P_{33, \text{competition}}$$
+   $$\text{threshold\_high} = w \cdot P_{66, \text{venue}} + (1 - w) \cdot P_{66, \text{competition}}$$
+4. **Transparent Conditional Discretization**:
+   $$\text{difference\_from\_par} = \hat{y} - \text{par\_score}$$
+   $$\text{classification} = \begin{cases}
+   \text{"Low"}, & \hat{y} < \text{threshold\_low} \\
+   \text{"Par"}, & \text{threshold\_low} \le \hat{y} \le \text{threshold\_high} \\
+   \text{"High"}, & \hat{y} > \text{threshold\_high}
+   \end{cases}$$
+5. **Persistence & Fast Lookup**:
+   Historical statistics are computed once and stored in `data/stadium_par_scores.csv` (and mirrored to `Datasets/stadium_par_scores.csv`). During inference, statistics are looked up in $O(1)$ from an in-memory cache without recalculating from raw deliveries.
+6. **Data Leakage Safeguards**:
+   - Calculated strictly using matches with `season <= 2021` (832 eligible training first innings).
+   - Unseen venues in test seasons ($2022–2024$) fall back automatically to the `_COMPETITION_AVERAGE_` baseline row ($163.5$ par, $[152.0, 175.0]$ boundaries).
+   - Functions also support `before_date` for point-in-time rolling validation without peeking into future matches.
+
+### Output Schema
+
+When queried via `predict_score_with_stadium_par()` or the dashboard:
+```json
+{
+  "predicted_score": 180.0,
+  "stadium_par_score": 173.3,
+  "difference_from_par": 6.7,
+  "classification": "Par",
+  "venue": "M Chinnaswamy Stadium",
+  "threshold_low": 157.6,
+  "threshold_high": 185.3,
+  "sample_size": 70,
+  "is_fallback": false
+}
+```
+
+*Cricket Context Note:* Stadium par reflects historical scoring conditions for the ground. A "High" classification indicates an above-average score for that venue but does not guarantee victory; similarly, a "Low" score does not imply it cannot be defended.
+
+---
+
+## 6. Unsupervised Batter Performance Clustering
+
+The system includes an unsupervised learning module (`src/batter_clustering.py`) that identifies empirical batting archetypes from historical ball-by-ball delivery data without relying on human-assigned player roles or subjective labels.
+
+### Purpose
+To uncover natural clusters of batting styles and scoring efficiencies across historical IPL seasons, enabling teams and analysts to distinguish high-volume anchors, aggressive finishers, steady accumulators, and lower-order batters.
+
+### Algorithm & Hyperparameters
+- **Algorithm**: K-Means Clustering (`sklearn.cluster.KMeans`).
+- **Reproducibility**: Deterministic clustering configured with `random_state=42` and `n_init=10`.
+- **Search Range**: Evaluates candidate clusters across $k \in [2, 5]$.
+
+### Feature Engineering & Preprocessing
+1. **Cricket Delivery Accounting Rules**:
+   - `total_runs`: Runs scored off the bat (`batsman_runs`). Team extras (wides, byes, leg-byes) are excluded.
+   - `balls_faced`: Deliveries faced, excluding wide deliveries (`extras_type != 'wides'`). No-balls, byes, and leg-byes count as legal balls faced.
+   - `dismissals`: Deliveries where `player_dismissed == player` and `dismissal_kind != 'retired hurt'`. Tactical "retired out" is counted as a dismissal under MCC Law 25.4.3.
+2. **Primary Clustering Features**:
+   - `batting_average`: $\frac{\text{total\_runs}}{\text{dismissals}}$ (if dismissals $> 0$, otherwise `np.nan`).
+   - `strike_rate`: $\frac{\text{total\_runs}}{\text{balls\_faced}} \times 100.0$.
+3. **Filtering & Sample Threshold**:
+   - **Minimum Activity Threshold ($\ge 200$ balls faced)**: Eliminates small-sample rate volatility from tailenders and brief appearances.
+   - **Undefined Averages**: Players with $0$ dismissals are safely filtered out to prevent infinite/NaN distortions.
+   - **Chronological Split**: Fitted strictly on matches through `season <= 2021` (yielding $165$ eligible historical batters), maintaining temporal consistency with supervised models.
+4. **Feature Standardization (`StandardScaler`)**:
+   Because batting average ($\sim 15–40$) and strike rate ($\sim 100–160$) exist on vastly different numerical scales, unscaled Euclidean distance would be dominated by strike rate variance. Features are scaled to zero mean and unit variance ($z = (x - \mu) / \sigma$).
+
+### Evaluation & Interpretation
+- **Silhouette Analysis**: Evaluated using `sklearn.metrics.silhouette_score`:
+  - $k=2$: **0.3754** (selected optimal $k$)
+  - $k=3$: 0.3361
+  - $k=4$: 0.3682
+  - $k=5$: 0.3591
+- **Empirical Clusters ($k=2$)**:
+  - **Cluster 0 (High Impact / Primary Scorers)**: $96$ batters, mean batting avg $30.6$, mean strike rate $135.0$ (e.g., Virat Kohli, Shikhar Dhawan, Rohit Sharma).
+  - **Cluster 1 (Lower Order / Traditional Accumulators)**: $69$ batters, mean batting avg $22.8$, mean strike rate $115.7$ (e.g., Parthiv Patel, Murali Vijay, Jacques Kallis).
+- **Dashboard Visualizations**:
+  - Interactive scatter plot of Batting Average vs. Strike Rate colored by cluster.
+  - Cluster centroid summary table with mean/median rate stats and top run-scorers.
+  - Searchable player-by-player assignment browser with cluster filtering.
+
+---
+
+## 7. How to Run the Project
 
 ### 1. Clone the repository
 
@@ -113,10 +211,9 @@ git clone https://github.com/ShreeBairagi/IPL.git
 cd IPL
 ```
 
-### 2. Create a virtual environment
+### 2. Create and activate a virtual environment
 
 **Windows (PowerShell):**
-
 ```powershell
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
@@ -129,38 +226,42 @@ python -m pip install --upgrade pip
 python -m pip install -r requirements.txt
 ```
 
-### 4. Run the dashboard
-
-```bash
-python -m streamlit run app.py
-```
-
-The dashboard may take a little time to initialize on its first launch.
-
-### Requirements
-
-- Python 3.11
-- The datasets included in the repository
-- Dependencies listed in `requirements.txt`
-
-### Environment Setup
-Ensure the local Python environment (`.venv`) is activated.
-
-### 1. Execute the Test Suite
-Run all unit, integration, and dashboard tests across all modules:
+### 4. Execute the Test Suite
+Run unit, integration, and UI tests across all components:
 ```powershell
-.\.venv\Scripts\python.exe -m unittest discover -s tests -v
+.\.venv\Scripts\pytest -q
+```
+*Includes tests for preprocessing, 10-over snapshots, regression, classification, chase probability, stadium par scoring, batter clustering, and Streamlit app flows (111 tests passing).*
+
+### 5. Generate / Refresh Stadium Par Scores Artifact
+To regenerate the stadium par score table strictly from training data:
+```powershell
+.\.venv\Scripts\python.exe -m src.par_score
 ```
 
-### 2. Launch the Streamlit Dashboard
-Launch the interactive web application locally:
+### 6. Launch the Streamlit Dashboard
+Launch the web interface locally:
 ```powershell
 .\.venv\Scripts\python.exe -m streamlit run app.py
 ```
 Open your browser at `http://localhost:8501`.
 
-The dashboard contains 4 functional sections:
-1. **Project Overview & Data Integrity**: Dataset metrics, split sizes, and leakage safeguards.
-2. **First-Innings Final Score Prediction & Classification**: Interactive scenario forecasting.
-3. **Second-Innings Chase-Win Probability**: Dynamic win-probability estimator.
+The dashboard contains 5 functional sections:
+1. **Project Overview & Data Integrity**: Dataset metrics, chronological split sizes, and leakage safeguards.
+2. **First-Innings Final Score Prediction**: Regression forecasting, universal tertiles, and dynamic stadium par evaluation.
+3. **Second-Innings Chase-Win Probability**: Dynamic win-probability estimation with live match state inputs.
 4. **Model Performance & Evaluation Audit**: Side-by-side performance comparison tables across all tasks and feature sets.
+5. **Batter Performance Clustering**: Interactive K-Means cluster space scatter plots, archetype summaries, and qualified player directory.
+
+---
+
+## 8. Future Scope & Planned Enhancements
+
+The following roadmap items represent planned future improvements that are **not yet implemented**:
+
+- **Next-Delivery Wicket Probability (Ball-by-Ball Classification)**: Developing a Naive Bayes or gradient-boosted classification model on individual ball-by-ball events to estimate the conditional probability of a wicket falling on the very next delivery based on bowler type, batsman hand, phase, and dot-ball pressure.
+- **Live Match Ingestion & In-Play Streaming**: Connecting real-time ball-by-ball API streams to update predicted final scores, win probabilities, and par differentials dynamically ball by ball.
+- **Phase-Wise Innings Forecasting**: Decomposing predictions into distinct match phases: Powerplay (overs 0–5), Middle Overs (overs 6–15), and Death Overs (overs 16–19).
+- **Multi-Dimensional Player Clustering**: Expanding clustering beyond batting average and strike rate to include bowler metrics (economy rate, bowling strike rate, dot ball percentage) and fielding impact (catch conversion, run-out involvement).
+- **Prediction Intervals & Uncertainty Calibration**: Implementing conformal prediction intervals for regression outputs and probability calibration (e.g., Platt scaling or isotonic regression) for chase-win probabilities.
+- **Evaluation on Expanded Historical & Future Seasons**: Validating and expanding historical benchmarks against future IPL seasons ($2025+$) with rolling walk-forward cross-validation.
