@@ -68,7 +68,7 @@ To ensure strict real-world generalization and prevent temporal data leakage:
 | **First-Innings Regression** | Mean Baseline, Linear Regression, Ridge Regression, Random Forest, Gradient Boosting, XGBoost (`XGBRegressor`) | MAE, RMSE, $R^2$ |
 | **First-Innings Classification** | Majority Baseline, K-Nearest Neighbors, Decision Tree, Support Vector Machine, Random Forest, XGBoost (`MulticlassXGBClassifier`), Regression-then-cut (Ridge, RF) | Accuracy, Macro F1, Confusion Matrix |
 | **Chase-Win Probability** | Majority Baseline, Logistic Regression, K-Nearest Neighbors, Random Forest, Gradient Boosting, XGBoost (`XGBClassifier`) | Accuracy, ROC-AUC, F1-Score, Brier Score |
-| **Stadium Par Classification** | Transparent Statistical Discretization (Empirical Bayes Shrinkage Tertiles) | Par Difference ($\Delta$), Ground Relative Class |
+| **Stadium Par Classification** | Transparent Statistical Discretization (Par Differential Bands $\pm 6.0$ Runs) | Par Difference ($\Delta$), Ground Relative Tier (Below Par, Par, Above Par) |
 | **Batter Clustering** | K-Means ($k=2$ to $5$, evaluated with `n_init=10`, `random_state=42`) | Silhouette Score, Cluster Centroids |
 
 ---
@@ -120,22 +120,22 @@ The system features dynamic stadium-specific par evaluation (`src/par_score.py`)
 1. **Continuous Score Prediction**: The user's input state is evaluated by the existing 10-over Regression pipeline (e.g., Ridge or Random Forest) to produce a projected first-innings score $\hat{y}$.
 2. **Empirical Distribution Aggregation**: Eligible 20-over first innings from historical matches (`season <= 2021`) are aggregated per venue to compute sample size ($N$), median score ($\tilde{x}_{\text{venue}}$), mean score ($\bar{x}_{\text{venue}}$), standard deviation, recent 4-season scoring trend ($\bar{x}_{\text{recent}}$), and tertile percentiles ($P_{33}, P_{66}$).
 3. **Empirical Bayes Shrinkage for Small-Sample Grounds**:
-   To prevent volatility for grounds with few matches (e.g., *OUTsurance Oval* with $N=2$), statistics are shrunk toward the competition training baseline ($\tilde{x}_{\text{competition}} = 163.5$, $P_{33} = 152.0$, $P_{66} = 175.0$) using credibility weight $w = \frac{N}{N + m}$ (with pseudo-count $m = 5.0$):
+   To prevent volatility for grounds with few matches (e.g., *OUTsurance Oval* with $N=2$), baseline statistics are shrunk toward the competition training baseline ($\tilde{x}_{\text{competition}} = 163.5$) using credibility weight $w = \frac{N}{N + m}$ (with pseudo-count $m = 5.0$):
    $$\text{Par Score} = w \cdot \tilde{x}_{\text{venue}} + (1 - w) \cdot \tilde{x}_{\text{competition}}$$
-   $$T_{\text{low}} = w \cdot P_{33, \text{venue}} + (1 - w) \cdot P_{33, \text{competition}}$$
-   $$T_{\text{high}} = w \cdot P_{66, \text{venue}} + (1 - w) \cdot P_{66, \text{competition}}$$
-4. **Transparent Conditional Discretization**:
-   $$\Delta_{\text{par}} = \hat{y} - \text{Par Score}$$
+4. **Transparent Par Differential Bands ($\pm 6.0$ Runs)**:
+   In T20 cricket analytics, competitive par represents approximately one standard over ($\sim \pm 6.0$ runs) around the venue's expected par score. Score tiers are classified directly by the run differential $\Delta_{\text{par}} = \hat{y} - \text{Par Score}$:
+   $$T_{\text{low}} = \text{Par Score} - 6.0$$
+   $$T_{\text{high}} = \text{Par Score} + 6.0$$
    $$\text{Classification} = \begin{cases}
-   \text{Low}, & \hat{y} < T_{\text{low}} \\
-   \text{Par}, & T_{\text{low}} \le \hat{y} \le T_{\text{high}} \\
-   \text{High}, & \hat{y} > T_{\text{high}}
+   \text{Below Par}, & \Delta_{\text{par}} < -6.0 \quad (\hat{y} < T_{\text{low}}) \\
+   \text{Par}, & -6.0 \le \Delta_{\text{par}} \le +6.0 \quad (T_{\text{low}} \le \hat{y} \le T_{\text{high}}) \\
+   \text{Above Par}, & \Delta_{\text{par}} > +6.0 \quad (\hat{y} > T_{\text{high}})
    \end{cases}$$
 5. **Persistence & Fast Lookup**:
    Historical statistics are computed once and stored in `data/stadium_par_scores.csv` (and mirrored to `Datasets/stadium_par_scores.csv`). During inference, statistics are looked up in $O(1)$ from an in-memory cache without recalculating from raw deliveries.
 6. **Data Leakage Safeguards**:
    - Calculated strictly using matches with `season <= 2021` (832 eligible training first innings).
-   - Unseen venues in test seasons ($2022–2024$) fall back automatically to the `_COMPETITION_AVERAGE_` baseline row ($163.5$ par, $[152.0, 175.0]$ boundaries).
+   - Unseen venues in test seasons ($2022–2024$) fall back automatically to the `_COMPETITION_AVERAGE_` baseline row ($163.5$ par).
    - Functions also support `before_date` for point-in-time rolling validation without peeking into future matches.
 
 ### Output Schema
@@ -143,19 +143,21 @@ The system features dynamic stadium-specific par evaluation (`src/par_score.py`)
 When queried via `predict_score_with_stadium_par()` or the dashboard:
 ```json
 {
-  "predicted_score": 180.0,
-  "stadium_par_score": 173.3,
-  "difference_from_par": 6.7,
-  "classification": "Par",
-  "venue": "M Chinnaswamy Stadium",
-  "threshold_low": 157.6,
-  "threshold_high": 185.3,
-  "sample_size": 70,
-  "is_fallback": false
+  "predicted_score": 150.5,
+  "stadium_par_score": 159.3,
+  "difference_from_par": -8.8,
+  "classification": "Below Par",
+  "short_classification": "Low",
+  "venue": "MA Chidambaram Stadium, Chepauk",
+  "threshold_low": 153.3,
+  "threshold_high": 165.3,
+  "sample_size": 65,
+  "is_fallback": false,
+  "par_margin": 6.0
 }
 ```
 
-*Cricket Context Note:* Stadium par reflects historical scoring conditions for the ground. A "High" classification indicates an above-average score for that venue but does not guarantee victory; similarly, a "Low" score does not imply it cannot be defended.
+*Cricket Context Note:* Stadium par reflects historical scoring conditions for the ground. An "Above Par" classification indicates an above-average score for that venue but does not guarantee victory; similarly, a "Below Par" score does not imply it cannot be defended.
 
 ---
 
