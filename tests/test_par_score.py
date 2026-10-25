@@ -76,18 +76,21 @@ class TestStadiumParScore(unittest.TestCase):
         self.assertEqual(len(chinnaswamy_rows), 1)
         row = chinnaswamy_rows.iloc[0]
 
-        # High scoring venue has par score > 170 and high threshold > 180
+        # High scoring venue has par score > 170
         self.assertGreater(row["par_score"], 170.0)
-        self.assertGreater(row["threshold_high"], 184.0)
 
-        # A score of 180 at Chinnaswamy is typical (Par), not High
-        eval_180 = classify_stadium_score(180, "M Chinnaswamy Stadium", self.stats_df)
-        self.assertEqual(eval_180["classification"], "Par")
-        self.assertFalse(eval_180["is_fallback"])
+        # Chinnaswamy Par is ~173.3. With +/-6 par margin, 174 is Par
+        eval_174 = classify_stadium_score(174, "M Chinnaswamy Stadium", self.stats_df)
+        self.assertEqual(eval_174["classification"], "Par")
+        self.assertFalse(eval_174["is_fallback"])
 
-        # A score of 190 at Chinnaswamy is High
-        eval_190 = classify_stadium_score(190, "M Chinnaswamy Stadium", self.stats_df)
-        self.assertEqual(eval_190["classification"], "High")
+        # A score of 185 at Chinnaswamy is Above Par (+11.7 runs)
+        eval_185 = classify_stadium_score(185, "M Chinnaswamy Stadium", self.stats_df)
+        self.assertEqual(eval_185["classification"], "Above Par")
+
+        # A score of 160 at Chinnaswamy is Below Par (-13.3 runs)
+        eval_160 = classify_stadium_score(160, "M Chinnaswamy Stadium", self.stats_df)
+        self.assertEqual(eval_160["classification"], "Below Par")
 
     def test_known_low_scoring_stadium(self):
         """Chepauk reflects spin/lower scoring conditions relative to Chinnaswamy."""
@@ -95,16 +98,16 @@ class TestStadiumParScore(unittest.TestCase):
         self.assertEqual(len(chepauk_rows), 1)
         row = chepauk_rows.iloc[0]
 
-        # Par score at Chepauk should be noticeably lower than Chinnaswamy
+        # Par score at Chepauk should be noticeably lower than Chinnaswamy (~159.3)
         self.assertLess(row["par_score"], 165.0)
 
-        # 180 runs at Chepauk is a commanding High score
+        # 180 runs at Chepauk is a commanding Above Par score (+20.7 vs Par)
         eval_chepauk = classify_stadium_score(180, "MA Chidambaram Stadium, Chepauk", self.stats_df)
-        self.assertEqual(eval_chepauk["classification"], "High")
+        self.assertEqual(eval_chepauk["classification"], "Above Par")
 
-        # 145 runs at Chepauk is Low
-        eval_low = classify_stadium_score(145, "MA Chidambaram Stadium, Chepauk", self.stats_df)
-        self.assertEqual(eval_low["classification"], "Low")
+        # 150.5 runs at Chepauk (par 159.3) is -8.8 runs, correctly classified as Below Par
+        eval_low = classify_stadium_score(150.5, "MA Chidambaram Stadium, Chepauk", self.stats_df)
+        self.assertEqual(eval_low["classification"], "Below Par")
 
     def test_rare_and_low_sample_stadium_shrinkage(self):
         """Stadiums with small sample sizes shrink towards the competition baseline."""
@@ -134,7 +137,7 @@ class TestStadiumParScore(unittest.TestCase):
         # Case 2: None venue
         none_eval = classify_stadium_score(145.0, None, self.stats_df)
         self.assertTrue(none_eval["is_fallback"])
-        self.assertEqual(none_eval["classification"], "Low")
+        self.assertEqual(none_eval["classification"], "Below Par")
 
     def test_chronological_leakage_prevention(self):
         """Calculating par scores with max_season=2021 strictly excludes 2022-2024 matches."""
@@ -182,11 +185,12 @@ class TestStadiumParScore(unittest.TestCase):
             "threshold_high": 170.0,
         }])
 
-        self.assertEqual(classify_stadium_score(149.9, "Test Ground", mock_stats)["classification"], "Low")
-        self.assertEqual(classify_stadium_score(150.0, "Test Ground", mock_stats)["classification"], "Par")
+        # Par is 160.0. With default par_margin=6.0: Below Par < 154.0, Par [154.0, 166.0], Above Par > 166.0
+        self.assertEqual(classify_stadium_score(153.9, "Test Ground", mock_stats)["classification"], "Below Par")
+        self.assertEqual(classify_stadium_score(154.0, "Test Ground", mock_stats)["classification"], "Par")
         self.assertEqual(classify_stadium_score(160.0, "Test Ground", mock_stats)["classification"], "Par")
-        self.assertEqual(classify_stadium_score(170.0, "Test Ground", mock_stats)["classification"], "Par")
-        self.assertEqual(classify_stadium_score(170.1, "Test Ground", mock_stats)["classification"], "High")
+        self.assertEqual(classify_stadium_score(166.0, "Test Ground", mock_stats)["classification"], "Par")
+        self.assertEqual(classify_stadium_score(166.1, "Test Ground", mock_stats)["classification"], "Above Par")
 
     def test_end_to_end_regression_integration(self):
         """Integrates with existing regression pipeline without altering predictions."""
@@ -219,7 +223,7 @@ class TestStadiumParScore(unittest.TestCase):
         self.assertIsInstance(result["predicted_score"], float)
         self.assertIsInstance(result["stadium_par_score"], float)
         self.assertIsInstance(result["difference_from_par"], float)
-        self.assertIn(result["classification"], ["Low", "Par", "High"])
+        self.assertIn(result["classification"], ["Below Par", "Par", "Above Par"])
 
         # Mathematical consistency
         expected_diff = round(result["predicted_score"] - result["stadium_par_score"], 1)

@@ -204,15 +204,16 @@ def main():
                             value=stadium_eval["classification"],
                         )
                         st.caption(
-                            f"Ground tertiles: Low (<{stadium_eval['threshold_low']:.1f}), "
+                            f"Par band (±{stadium_eval.get('par_margin', 6.0):.0f} runs): "
+                            f"Below Par (<{stadium_eval['threshold_low']:.1f}), "
                             f"Par ({stadium_eval['threshold_low']:.1f}–{stadium_eval['threshold_high']:.1f}), "
-                            f"High (>{stadium_eval['threshold_high']:.1f})."
+                            f"Above Par (>{stadium_eval['threshold_high']:.1f})."
                         )
 
                     st.info(
                         f"**Stadium Evaluation:** At **{stadium_eval['venue']}**, the historical par score is **{stadium_eval['stadium_par_score']:.1f} runs**. "
                         f"Your projected score of **{predicted_score:.1f}** is **{diff_str}** and classifies as **'{stadium_eval['classification']}'** for this ground. "
-                        "(A 'High' score does not guarantee a win, nor does a 'Low' score imply an undefendable total)."
+                        f"(Par is defined within ±{stadium_eval.get('par_margin', 6.0):.0f} runs of the ground par)."
                     )
 
                     with st.expander("ℹ️ Universal Baseline (Non-Stadium Specific)", expanded=False):

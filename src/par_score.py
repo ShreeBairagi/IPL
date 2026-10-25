@@ -193,20 +193,20 @@ def classify_stadium_score(
     predicted_score: Union[int, float],
     venue: Optional[str] = None,
     stats_df: Optional[pd.DataFrame] = None,
+    par_margin: float = 6.0,
+    use_delta_bands: bool = True,
 ) -> Dict[str, Any]:
     """
-    Classify a continuous regression-predicted score as 'Low', 'Par', or 'High'
-    relative to the historical scoring distribution of the specific stadium.
+    Classify a continuous regression-predicted score relative to the stadium's par score.
 
-    Conditional Logic:
-    - 'Low': predicted_score < threshold_low (tertile 1/3 bound)
-    - 'Par': threshold_low <= predicted_score <= threshold_high
-    - 'High': predicted_score > threshold_high (tertile 2/3 bound)
+    Option A (Par Differential Bands - Recommended for Cricket Analytics):
+    Evaluates score directly against the ground's par baseline with a +/- par_margin window:
+    - 'Below Par': diff_from_par < -par_margin (e.g. < par - 6.0 runs)
+    - 'Par': -par_margin <= diff_from_par <= par_margin (within +/- 6.0 runs of ground par)
+    - 'Above Par': diff_from_par > par_margin (e.g. > par + 6.0 runs)
 
-    Statistical Meaning:
-    Describes score rarity relative to venue conditions. A 'High' classification
-    indicates an above-average total historically for that ground, while 'Par'
-    represents a typical competitive total. It is not an absolute win guarantee.
+    Option B (Tertiles):
+    If use_delta_bands=False, falls back to raw 33.3% and 66.7% empirical percentiles.
     """
     if stats_df is None:
         stats_df = load_stadium_par_scores()
@@ -226,27 +226,48 @@ def classify_stadium_score(
         is_fallback = True
 
     par_score = float(matched_row["par_score"])
-    t_low = float(matched_row["threshold_low"])
-    t_high = float(matched_row["threshold_high"])
     diff_from_par = round(pred_val - par_score, 1)
 
-    if pred_val < t_low:
-        classification = "Low"
-    elif pred_val <= t_high:
-        classification = "Par"
+    if use_delta_bands:
+        # Option A: Tight, intuitive +/- par_margin (default +/- 6.0 runs)
+        t_low = round(par_score - par_margin, 1)
+        t_high = round(par_score + par_margin, 1)
+
+        if diff_from_par < -par_margin:
+            classification = "Below Par"
+            short_class = "Low"
+        elif diff_from_par <= par_margin:
+            classification = "Par"
+            short_class = "Par"
+        else:
+            classification = "Above Par"
+            short_class = "High"
     else:
-        classification = "High"
+        # Historical tertile percentiles
+        t_low = float(matched_row["threshold_low"])
+        t_high = float(matched_row["threshold_high"])
+        if pred_val < t_low:
+            classification = "Below Par"
+            short_class = "Low"
+        elif pred_val <= t_high:
+            classification = "Par"
+            short_class = "Par"
+        else:
+            classification = "Above Par"
+            short_class = "High"
 
     return {
         "predicted_score": round(pred_val, 1),
         "stadium_par_score": round(par_score, 1),
         "difference_from_par": diff_from_par,
         "classification": classification,
+        "short_classification": short_class,
         "venue": norm_venue if not is_fallback else "Competition Average",
-        "threshold_low": round(t_low, 1),
-        "threshold_high": round(t_high, 1),
+        "threshold_low": t_low,
+        "threshold_high": t_high,
         "sample_size": int(matched_row["match_count"]),
         "is_fallback": is_fallback,
+        "par_margin": par_margin,
     }
 
 
