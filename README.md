@@ -121,15 +121,15 @@ The system features dynamic stadium-specific par evaluation (`src/par_score.py`)
 2. **Empirical Distribution Aggregation**: Eligible 20-over first innings from historical matches (`season <= 2021`) are aggregated per venue to compute sample size ($N$), median score ($\tilde{x}_{\text{venue}}$), mean score ($\bar{x}_{\text{venue}}$), standard deviation, recent 4-season scoring trend ($\bar{x}_{\text{recent}}$), and tertile percentiles ($P_{33}, P_{66}$).
 3. **Empirical Bayes Shrinkage for Small-Sample Grounds**:
    To prevent volatility for grounds with few matches (e.g., *OUTsurance Oval* with $N=2$), statistics are shrunk toward the competition training baseline ($\tilde{x}_{\text{competition}} = 163.5$, $P_{33} = 152.0$, $P_{66} = 175.0$) using credibility weight $w = \frac{N}{N + m}$ (with pseudo-count $m = 5.0$):
-   $$\text{par\_score} = w \cdot \tilde{x}_{\text{venue}} + (1 - w) \cdot \tilde{x}_{\text{competition}}$$
-   $$\text{threshold\_low} = w \cdot P_{33, \text{venue}} + (1 - w) \cdot P_{33, \text{competition}}$$
-   $$\text{threshold\_high} = w \cdot P_{66, \text{venue}} + (1 - w) \cdot P_{66, \text{competition}}$$
+   $$\text{Par Score} = w \cdot \tilde{x}_{\text{venue}} + (1 - w) \cdot \tilde{x}_{\text{competition}}$$
+   $$T_{\text{low}} = w \cdot P_{33, \text{venue}} + (1 - w) \cdot P_{33, \text{competition}}$$
+   $$T_{\text{high}} = w \cdot P_{66, \text{venue}} + (1 - w) \cdot P_{66, \text{competition}}$$
 4. **Transparent Conditional Discretization**:
-   $$\text{difference\_from\_par} = \hat{y} - \text{par\_score}$$
-   $$\text{classification} = \begin{cases}
-   \text{"Low"}, & \hat{y} < \text{threshold\_low} \\
-   \text{"Par"}, & \text{threshold\_low} \le \hat{y} \le \text{threshold\_high} \\
-   \text{"High"}, & \hat{y} > \text{threshold\_high}
+   $$\Delta_{\text{par}} = \hat{y} - \text{Par Score}$$
+   $$\text{Classification} = \begin{cases}
+   \text{Low}, & \hat{y} < T_{\text{low}} \\
+   \text{Par}, & T_{\text{low}} \le \hat{y} \le T_{\text{high}} \\
+   \text{High}, & \hat{y} > T_{\text{high}}
    \end{cases}$$
 5. **Persistence & Fast Lookup**:
    Historical statistics are computed once and stored in `data/stadium_par_scores.csv` (and mirrored to `Datasets/stadium_par_scores.csv`). During inference, statistics are looked up in $O(1)$ from an in-memory cache without recalculating from raw deliveries.
@@ -177,8 +177,8 @@ To uncover natural clusters of batting styles and scoring efficiencies across hi
    - `balls_faced`: Deliveries faced, excluding wide deliveries (`extras_type != 'wides'`). No-balls, byes, and leg-byes count as legal balls faced.
    - `dismissals`: Deliveries where `player_dismissed == player` and `dismissal_kind != 'retired hurt'`. Tactical "retired out" is counted as a dismissal under MCC Law 25.4.3.
 2. **Primary Clustering Features**:
-   - `batting_average`: $\frac{\text{total\_runs}}{\text{dismissals}}$ (if dismissals $> 0$, otherwise `np.nan`).
-   - `strike_rate`: $\frac{\text{total\_runs}}{\text{balls\_faced}} \times 100.0$.
+   - `batting_average`: $\frac{\text{Total Runs}}{\text{Dismissals}}$ (if dismissals $> 0$, otherwise `np.nan`).
+   - `strike_rate`: $\frac{\text{Total Runs}}{\text{Balls Faced}} \times 100.0$.
 3. **Filtering & Sample Threshold**:
    - **Minimum Activity Threshold ($\ge 200$ balls faced)**: Eliminates small-sample rate volatility from tailenders and brief appearances.
    - **Undefined Averages**: Players with $0$ dismissals are safely filtered out to prevent infinite/NaN distortions.
