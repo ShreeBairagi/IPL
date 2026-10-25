@@ -179,53 +179,51 @@ def main():
                     stadium_eval = get_stadium_par_evaluation(predicted_score, venue)
 
                     st.success("### Prediction Generated")
-                    res_col1, res_col2 = st.columns(2)
-                    with res_col1:
+                    row1_col1, row1_col2, row1_col3 = st.columns(3)
+                    with row1_col1:
                         st.metric(
                             label=f"Predicted Final Score ({reg_model_choice})",
                             value=f"{predicted_score:.1f} runs",
                         )
-                        st.caption("⚠️ **Model Estimate:** Mid-innings projection with ±17.8 MAE test uncertainty.")
+                        st.caption("⚠️ **Model Estimate:** Mid-innings projection with ±17.8 MAE.")
 
-                    with res_col2:
-                        st.metric(
-                            label="Predicted Score Class (Regression-then-cut)",
-                            value=f"{predicted_class}",
-                        )
-                        st.caption(
-                            f"Universal thresholds derived from training data: Low (≤{t_low:.0f}), "
-                            f"Medium ({t_low:.0f}–{t_high:.0f}), High (>{t_high:.0f})."
-                        )
-
-                    st.markdown("#### 🏟️ Stadium-Specific Par Evaluation")
-                    par_col1, par_col2 = st.columns(2)
-                    with par_col1:
+                    with row1_col2:
                         diff_val = stadium_eval["difference_from_par"]
                         diff_str = f"{'+' if diff_val >= 0 else ''}{diff_val:.1f} vs Par"
                         st.metric(
-                            label="Stadium Par Score",
+                            label=f"🏟️ Stadium Par ({stadium_eval['venue']})",
                             value=f"{stadium_eval['stadium_par_score']:.1f} runs",
                             delta=diff_str,
                         )
-                        fallback_note = " *(using competition average fallback)*" if stadium_eval["is_fallback"] else ""
-                        st.caption(f"Historical sample: **{stadium_eval['sample_size']}** matches at {stadium_eval['venue']}{fallback_note}.")
+                        fallback_note = " *(competition fallback)*" if stadium_eval["is_fallback"] else ""
+                        st.caption(f"Historical sample: **{stadium_eval['sample_size']}** matches{fallback_note}.")
 
-                    with par_col2:
+                    with row1_col3:
                         st.metric(
-                            label="Stadium-Relative Tier",
+                            label="🏟️ Stadium Score Tier",
                             value=stadium_eval["classification"],
                         )
                         st.caption(
-                            f"Venue Tertiles: Low (<{stadium_eval['threshold_low']:.1f}), "
+                            f"Ground tertiles: Low (<{stadium_eval['threshold_low']:.1f}), "
                             f"Par ({stadium_eval['threshold_low']:.1f}–{stadium_eval['threshold_high']:.1f}), "
                             f"High (>{stadium_eval['threshold_high']:.1f})."
                         )
 
                     st.info(
-                        "ℹ️ **Cricket Context:** Stadium par reflects historical scoring conditions for this venue. "
-                        "A 'High' classification indicates an above-average score for this ground, but is not guaranteed "
-                        "to be defended; similarly, a 'Low' score does not imply it cannot be defended."
+                        f"🏟️ **Stadium Evaluation:** At **{stadium_eval['venue']}**, the par score is **{stadium_eval['stadium_par_score']:.1f} runs**. "
+                        f"Your projected score of **{predicted_score:.1f}** is **{diff_str}** and classifies as **'{stadium_eval['classification']}'** for this ground. "
+                        "(A 'High' score does not guarantee a win, nor does a 'Low' score imply an undefendable total)."
                     )
+
+                    with st.expander("ℹ️ Universal Baseline (Non-Stadium Specific)", expanded=False):
+                        st.metric(
+                            label="Predicted Score Class (Regression-then-cut)",
+                            value=f"{predicted_class}",
+                        )
+                        st.caption(
+                            f"Universal thresholds derived across all grounds: Low (≤{t_low:.0f}), "
+                            f"Medium ({t_low:.0f}–{t_high:.0f}), High (>{t_high:.0f})."
+                        )
                 except Exception as e:
                     st.error(f"Error generating score prediction: {e}")
 
