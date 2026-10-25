@@ -191,7 +191,7 @@ def main():
                         diff_val = stadium_eval["difference_from_par"]
                         diff_str = f"{'+' if diff_val >= 0 else ''}{diff_val:.1f} vs Par"
                         st.metric(
-                            label=f"🏟️ Stadium Par ({stadium_eval['venue']})",
+                            label=f"Stadium Par ({stadium_eval['venue']})",
                             value=f"{stadium_eval['stadium_par_score']:.1f} runs",
                             delta=diff_str,
                         )
@@ -200,7 +200,7 @@ def main():
 
                     with row1_col3:
                         st.metric(
-                            label="🏟️ Stadium Score Tier",
+                            label="Stadium Score Tier",
                             value=stadium_eval["classification"],
                         )
                         st.caption(
@@ -210,7 +210,7 @@ def main():
                         )
 
                     st.info(
-                        f"🏟️ **Stadium Evaluation:** At **{stadium_eval['venue']}**, the par score is **{stadium_eval['stadium_par_score']:.1f} runs**. "
+                        f"**Stadium Evaluation:** At **{stadium_eval['venue']}**, the historical par score is **{stadium_eval['stadium_par_score']:.1f} runs**. "
                         f"Your projected score of **{predicted_score:.1f}** is **{diff_str}** and classifies as **'{stadium_eval['classification']}'** for this ground. "
                         "(A 'High' score does not guarantee a win, nor does a 'Low' score imply an undefendable total)."
                     )
